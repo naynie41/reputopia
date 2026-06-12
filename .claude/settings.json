@@ -1,0 +1,47 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm -v)",
+      "Bash(npm -v)",
+      "Bash(git --version)",
+      "WebSearch",
+      "Bash(pnpm create *)",
+      "Bash(mkdir -p apps)",
+      "Bash(echo \"test\")",
+      "Bash(rm apps/_writetest.txt)",
+      "Bash(cd \"c:/Users/ACER/Desktop/sales roleplay/apps/web\" && rm -f pnpm-workspace.yaml CLAUDE.md AGENTS.md .gitignore && echo \"removed stray files\" && ls -a)",
+      "PowerShell(foreach \\($port in 3000,3001\\) { $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue; if \\($c\\) { $c.OwningProcess | Sort-Object -Unique | ForEach-Object { taskkill /PID $_ /F 2>$null } } }; \"ports cleaned\")",
+      "WebFetch(domain:github.com)",
+      "Bash(pnpm --filter @sr/db exec prisma migrate dev --name phase1_live_call)",
+      "Bash(pnpm --filter @sr/db exec prisma migrate dev --name session_duration)",
+      "Bash(pnpm --filter @sr/web lint)",
+      "PowerShell($c = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue; if \\($c\\) { $c.OwningProcess | Sort-Object -Unique | ForEach-Object { taskkill /PID $_ /F 2>$null } } else { \"port 3000 free\" })",
+      "Bash(node scripts/smoke.mjs)",
+      "Bash(rm -f apps/web/scripts/smoke.mjs)",
+      "Bash(rmdir apps/web/scripts)",
+      "Bash(pnpm --filter @sr/core typecheck)",
+      "Bash(pnpm --filter @sr/web test)",
+      "WebFetch(domain:docs.livekit.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(pnpm --filter @sr/web typecheck)",
+      "Bash(pnpm dev *)",
+      "PowerShell($n = Get-Process node -ErrorAction SilentlyContinue; \"node.exe count: $\\($n.Count\\)\")",
+      "Bash(pnpm --filter @sr/db exec tsx _check.mts)",
+      "Bash(node apps/web/scripts/_r2ls.mjs)",
+      "Bash(pnpm --filter @sr/db generate)",
+      "Bash(pnpm --filter @sr/db exec prisma migrate dev --name session_video_default_off)",
+      "Bash(pnpm -r typecheck)",
+      "Bash(pnpm -r lint)",
+      "Bash(pnpm --filter @sr/db exec tsx _consent.mts)",
+      "PowerShell(pnpm --filter @sr/db migrate --name phase2_scoring)",
+      "PowerShell(pnpm install 2>&1)",
+      "PowerShell($env:CI = \"true\"; pnpm install 2>&1 | Select-Object -Last 20)",
+      "PowerShell($env:CI = \"true\"; pnpm --filter @sr/db migrate --name phase2_scoring 2>&1 | Select-Object -Last 30)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\ACER\\Desktop\\sales roleplay\\apps\\web",
+      "C:\\Users\\ACER\\Desktop\\sales roleplay\\apps\\web\\.next",
+      "c:\\Users\\ACER\\.claude\\projects\\c--Users-ACER-Desktop-sales-roleplay\\memory"
+    ]
+  }
+}

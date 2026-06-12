@@ -1,0 +1,277 @@
+// Sales Roleplay — Prisma schema.
+//
+// PHASE 0: identity + profile (User, Organization, OrgMembership, SkillProfile).
+// PHASE 1: live calls — Session, RecordingConsent (+ SessionStatus/RecordingStatus).
+// PHASE 2: async scoring — Transcript, Score (+ TranscriptStatus/ScoreStatus). The
+// pipeline runs in @sr/jobs (Inngest): transcribe (AssemblyAI) -> deterministic
+// metrics -> Claude scoring -> persist Score + update SkillProfile.
+// Later PRD §8 entities (Scenario, Showcase, Shortlist, Notification, Report,
+// MatchRequest) arrive in their phases via backward-compatible
+// (expand-then-contract) migrations — do NOT add them ahead of their phase.
+//
+// Enums mirror packages/core/src/enums.ts — keep member names in sync.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/client"
+}
+
+// Prisma 7: connection URLs live in prisma.config.ts (the CLI uses DIRECT_URL for
+// migrations); the runtime client connects via a Neon driver adapter using the
+// POOLED DATABASE_URL (see src/index.ts).
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PRACTITIONER
+  RECRUITER
+  MANAGER
+  ADMIN
+}
+
+enum OrgRole {
+  RECRUITER
+  MANAGER
+  ADMIN
+}
+
+enum Track {
+  DM_SETTING
+  OBJECTION
+  DISCOVERY
+  CLOSING
+}
+
+enum ExperienceLevel {
+  STUDENT
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+}
+
+enum SessionStatus {
+  PENDING // created, waiting for participants
+  LIVE // call in progress
+  ENDED // call finished
+  CANCELED // abandoned before it went live
+}
+
+enum RecordingStatus {
+  NONE // no egress started yet
+  RECORDING // egress in progress
+  READY // recording uploaded to R2
+  FAILED // egress failed
+}
+
+// Lifecycle of the AssemblyAI transcription job for a session (Phase 2).
+enum TranscriptStatus {
+  PENDING // job submitted, not yet complete
+  PROCESSING // AssemblyAI is transcribing
+  READY // diarized transcript stored
+  FAILED // transcription failed (terminal after retries)
+}
+
+// Lifecycle of the AI scoring job for a session (Phase 2). Drives the user-facing
+// "analysis in progress" / "ready" / "scoring failed, retry" states (FR-23).
+enum ScoreStatus {
+  PENDING // pipeline queued, not started
+  PROCESSING // transcribing / scoring in progress
+  COMPLETE // score persisted
+  FAILED // pipeline failed (terminal after retries)
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique // maps to Clerk user id; synced via webhook
+  email     String   @unique
+  role      UserRole @default(PRACTITIONER)
+
+  name            String?
+  headline        String?
+  targetRole      String? // e.g. SDR / AE
+  experienceLevel ExperienceLevel?
+  industries      String[]         @default([])
+  avatarUrl       String?
+  primaryTrack    Track?
+
+  // True once the user has completed first-login role selection (FR-2).
+  onboardedAt DateTime?
+
+  memberships  OrgMembership[]
+  skillProfile SkillProfile?
+
+  // Phase 1: live-call sessions this user takes part in, and recording consent.
+  sessionsAsSeller      Session[]          @relation("SellerSessions")
+  sessionsAsCounterpart Session[]          @relation("CounterpartSessions")
+  recordingConsents     RecordingConsent[]
+
+  // Phase 2: AI scores where this user is the scored subject (v1 = seller only).
+  scores Score[] @relation("ScoreSubject")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+}
+
+model Organization {
+  id      String  @id @default(cuid())
+  clerkId String  @unique // Clerk organization id
+  name    String
+  slug    String? @unique
+
+  memberships OrgMembership[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OrgMembership {
+  id    String  @id @default(cuid())
+  role  OrgRole @default(RECRUITER)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+// Rolling per-track skill scores (PRD FR-27). Created with the practitioner;
+// populated by the scoring pipeline in Phase 2+. Zeroed until then.
+model SkillProfile {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  discovery Int @default(0)
+  objection Int @default(0)
+  dmSetting Int @default(0)
+  closing   Int @default(0)
+  repsCount Int @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
+// A 1:1 live roleplay call (PRD §5.4 / §8 Session). Phase 1 has no Scenario or
+// matchmaking, so seller = creator/host and counterpart = the person who opens the
+// share link; scenario fields are nullable and reserved for Phase 3.
+model Session {
+  id     String        @id @default(cuid())
+  roomId String        @unique // LiveKit room name
+  status SessionStatus @default(PENDING)
+
+  sellerId String
+  seller   User   @relation("SellerSessions", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // Null until a second participant joins via the share link.
+  counterpartId String?
+  counterpart   User?   @relation("CounterpartSessions", fields: [counterpartId], references: [id], onDelete: SetNull)
+
+  videoEnabled    Boolean   @default(false) // audio always captured; video opt-in (cost control)
+  durationMinutes Int       @default(15) // drives the shared in-call timer (FR-15)
+  startedAt       DateTime?
+  endedAt         DateTime?
+
+  // Recording (LiveKit Egress -> R2). recordingKey is the private R2 object key;
+  // it is NEVER served directly — only via short-lived signed URLs.
+  recordingStatus RecordingStatus @default(NONE)
+  egressId        String?
+  recordingKey    String?
+
+  // Reserved for Phase 3 (scenario library). No Scenario table yet.
+  scenarioId      String?
+  scenarioVersion Int?
+
+  // Phase 2: post-call async pipeline outputs.
+  transcript Transcript?
+  scores     Score[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sellerId])
+  @@index([counterpartId])
+  @@index([status])
+}
+
+// Versioned, auditable recording-consent acceptance (CLAUDE.md security rule;
+// consent text + version live in @sr/core). One row per (user, version).
+model RecordingConsent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version   String // e.g. "2026-06-07"
+  acceptedAt DateTime @default(now())
+
+  @@unique([userId, version])
+  @@index([userId])
+}
+
+// Diarized transcript of a session's recording (PRD §8 Transcript). Produced by
+// AssemblyAI batch transcription with speaker labels. One per session. The diarized
+// utterances + words live in diarizedJson; deterministic metrics are computed from
+// it in @sr/core (not stored here — they live on the Score).
+model Transcript {
+  id        String           @id @default(cuid())
+  sessionId String           @unique
+  session   Session          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  status    TranscriptStatus @default(PENDING)
+
+  provider   String  @default("assemblyai")
+  externalId String? // AssemblyAI transcript id (for idempotent polling/lookup)
+
+  // Normalized diarized turns (see @sr/core DiarizedTranscript). Sentiment is the
+  // raw provider sentiment payload, kept separately (PRD §8 sentiment_json).
+  diarizedJson  Json?
+  sentimentJson Json?
+  durationS     Int?
+  error         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+// AI score for one subject of a session (PRD §8 Score + §6.3 output contract).
+// v1 scores the seller only, so there is one Score per session, but the schema
+// supports per-subject scoring. Status drives the user-facing analysis state (FR-23).
+model Score {
+  id        String  @id @default(cuid())
+  sessionId String
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  subjectUserId String
+  subjectUser   User   @relation("ScoreSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
+
+  status ScoreStatus @default(PENDING)
+
+  // Populated when status = COMPLETE. Shapes are the @sr/core scoring contract:
+  // dimensionsJson = ScoredDimension[], momentsJson = Moment[],
+  // deterministicJson = DeterministicMetrics.
+  overall           Int?
+  dimensionsJson    Json?
+  deterministicJson Json?
+  strengths         String[] @default([])
+  growthAreas       String[] @default([])
+  momentsJson       Json?
+
+  model         String? // Claude model id used (e.g. claude-sonnet-4-6)
+  rubricVersion String? // @sr/core RUBRIC_VERSION at scoring time (calibration/QA)
+  error         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, subjectUserId])
+  @@index([subjectUserId])
+  @@index([status])
+}

@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# env — never commit real secrets (.env.example IS committed)
+.env
+.env.*
+!.env.example
+
+# prisma generated client
+packages/db/generated/
+
+# testing
+coverage/
+
+# misc
+.DS_Store
+*.log
+.vercel/
+.turbo/

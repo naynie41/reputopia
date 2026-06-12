@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# create-next-app added these; keep so pnpm doesn't run their build scripts unprompted
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+
+# Trusted packages allowed to run install/build scripts (esbuild powers tsx/vitest;
+# prisma builds its query engine + CLI).
+onlyBuiltDependencies:
+  - esbuild
+  - prisma
+  - "@prisma/engines"
