@@ -19,11 +19,15 @@ When the PRD and this file disagree, ask rather than guessing.
 
 ## Current status
 
-**Phase 0 — Foundations: ✅ COMPLETE.** Acceptance met: a user can sign up, pick a role (practitioner or recruiter/manager), and edit a profile. Verified via lint/typecheck/build + a DB persistence round-trip + a signed-webhook→DB test against the Neon dev branch.
+**Phase 0 — Foundations: ✅ COMPLETE.** Sign up → pick role → edit profile.
+**Phase 1 — Live call MVP: ✅ COMPLETE.** LiveKit 1:1 calls, device/controls, Egress recording → R2, consent.
+**Phase 2 — Scoring pipeline: ✅ COMPLETE (code-complete; one manual live check remains).** Acceptance met by layer: lint/typecheck/tests/build green, migration applied to the Neon dev branch, deterministic calibration green. The full **live** loop ("a finished call automatically produces a scored rep") has **not been run against the real AssemblyAI/Anthropic APIs** — local `.env` has placeholder keys; that's the one remaining manual confirmation. To run it: set real `ASSEMBLYAI_API_KEY` + `ANTHROPIC_API_KEY`, `pnpm dev` + `npx inngest-cli dev -u http://localhost:3000/api/inngest`, finish a recorded call, open `/reps/<sessionId>`, and confirm `Score` (COMPLETE) + updated `SkillProfile`. Run the live calibration first: `ANTHROPIC_API_KEY=sk-... pnpm --filter @sr/jobs test`.
 
-**Next: Phase 1 (Live call MVP, LiveKit). Do NOT start it unless asked.** Build only what the current phase calls for.
+**Next: Phase 3 (Matchmaking, Redis queue). Do NOT start it unless asked.** Build only what the current phase calls for.
 
-What exists after Phase 0: pnpm monorepo; Next.js App Router app with an authenticated sidebar shell; Clerk auth (orgs + roles) with sign-in/up, first-login role selection, and a `/api/webhooks/clerk` sync; Prisma schema + migration on Neon for the identity/profile entities; tRPC for all reads/writes; practitioner + recruiter profile pages; `/api/health`.
+What exists after Phase 2: everything from Phases 0–1, plus the async scoring pipeline in `@sr/jobs` (Inngest): `session/ended` → AssemblyAI batch diarized transcription → deterministic metrics → Claude (Sonnet 4.6, cached rubric, structured output, validated against the zod contract with a correction-retry) → persist `Score` + roll `SkillProfile` → emit `score/created`. The rubric, output contract, deterministic metrics, aggregation, and the calibration set are pure code in `@sr/core` (`scoring/`). Served at `/api/inngest` (public in `proxy.ts`); the LiveKit webhook emits `session/ended` on egress-complete. The **rep detail view** at `/reps/[sessionId]` (owner-authorized `score.getBySession` tRPC read + signed recording URL) shows the player, score, dimension breakdown with clickable evidence, strengths/growth, moments, and transcript; the post-call screen links to it. No practitioner/recruiter dashboards yet (Phase 4–5).
+
+**Phase 2 design decisions (owner-approved):** score on the **real-time Messages API** (not Batch) to meet the < 3 min p50 SLA — caching still discounts the rubric; **poll AssemblyAI inside one durable Inngest function** (no extra webhook); the **LLM identifies which diarized speaker is the seller** (composite room recording has no per-speaker identity — per-participant track egress would be a Phase 1 change, deferred); a **single default rubric** (no Scenario table) — per-scenario weighting (`WEIGHT_PRESETS`/`getScenarioWeights`) is built but unwired until Phase 3; rep view is **seller-only** ("own reps") — counterpart/recruiter access is a later phase.
 
 > **Not done in Phase 0 (deferred):** see the "Known gaps / deferred" section at the bottom.
 
@@ -61,17 +65,20 @@ Actual layout as of Phase 0 (package names in parens):
     (app)/                                 authenticated route GROUP (sidebar shell + gating)
       layout.tsx                           auth + onboarded gate; renders AppSidebar
       dashboard/, profile/                 role-aware pages
+      reps/[sessionId]/                    rep detail view (scored rep: player + score + transcript)
+    call/[sessionId]/                      full-screen live call (outside sidebar shell)
     api/trpc/[trpc]/                       tRPC fetch handler
-    api/webhooks/clerk/                    Clerk->Postgres sync (Svix-verified)
+    api/inngest/                           Inngest serve endpoint (public in proxy.ts; signed)
+    api/webhooks/clerk/, api/webhooks/livekit/  Clerk + LiveKit webhooks (verified)
     api/health/                            DB health probe
-  src/server/trpc/                         tRPC init (context+procedures), root, routers/
-  src/server/users.ts                      getDbUser / ensureDbUser (DB is source of truth)
+  src/server/trpc/routers/                 profile, call (roleplay), consent, score
+  src/server/{livekit,r2}.ts               LiveKit egress/tokens + R2 signed URLs (server-only)
   src/trpc/                                client.tsx (provider+useTRPC), server.ts (RSC caller), query-client.ts
-  src/components/ui/                        shadcn-style primitives (button, input, card, badge, avatar, …)
+  src/components/{ui,call,rep}/            shadcn primitives, call experience, rep-detail
 /packages/config              (@sr/config) zod env schema (env.server/env.client), shared eslint + tsconfig base
-/packages/core                (@sr/core)   shared enums + domain zod schemas (profile, onboarding)
+/packages/core                (@sr/core)   enums + domain zod schemas (profile, onboarding, call); scoring/ (rubric+anchors, weight presets, output contract, deterministic metrics, prompt builder, aggregate, calibration set) — all pure + unit-tested
 /packages/db                  (@sr/db)     Prisma 7 schema, prisma.config.ts, generated/ client, src/index.ts singleton, seed
-/packages/jobs                             PLACEHOLDER (README only, no package.json) — Inngest, Phase 2+
+/packages/jobs                (@sr/jobs)   Inngest client + functions (score-session) + provider wrappers (assemblyai, anthropic, r2) + live calibration test; served at apps/web /api/inngest
 /docs                                      PRD, devops handover, this file (cost-and-pricing.md still missing)
 ```
 
@@ -94,6 +101,8 @@ Use **pnpm** (these root scripts exist):
 - `pnpm db:studio` — Prisma Studio
 - `pnpm db:seed` — idempotent seed (admin user + sample org)
 - `pnpm format` / `pnpm format:check` — Prettier
+- **Inngest dev:** `npx inngest-cli@latest dev -u http://localhost:3000/api/inngest` (run alongside `pnpm dev` to execute jobs locally; dashboard at :8288)
+- **Live scoring calibration (PRD §6.4 guardrail, costs API credits):** `ANTHROPIC_API_KEY=sk-... pnpm --filter @sr/jobs test` — scores the reference reps and flags drift outside expected ranges. Skips automatically without a real key. The deterministic half runs in plain `pnpm test`.
 
 **Always run `pnpm lint` and `pnpm typecheck` before considering a task done.** Fix what they flag.
 
@@ -143,7 +152,7 @@ Use **pnpm** (these root scripts exist):
 
 ---
 
-## Known gaps / deferred (as of end of Phase 0)
+## Known gaps / deferred (updated through Phase 2)
 
 Tracked here so a future session doesn't mistake these for bugs:
 
@@ -152,7 +161,17 @@ Tracked here so a future session doesn't mistake these for bugs:
 - **No automated browser E2E.** The interactive sign-up→role→edit loop is verified by hand + by layer (types, persistence round-trip, signed-webhook test). `@clerk/testing` + Playwright is a candidate follow-up.
 - **Avatar is a URL field, not an upload.** Real image upload waits on Cloudflare R2 (Phase 1). Avatars otherwise come from Clerk via the sync.
 - **Recruiter org**: onboarding creates a *Clerk* organization; the local `Organization`/`OrgMembership` rows only appear once the Clerk webhook runs (so the recruiter profile shows a placeholder org name until then). Requires Clerk **Organizations** enabled in the dashboard.
-- **Schema is identity/profile-only.** PRD §8 entities for later phases (Scenario, Session, Transcript, Score, Showcase, Shortlist, Notification, Report, MatchRequest) are intentionally absent — add them in their phase via expand-then-contract migrations.
+- **Schema covers Phases 0–2.** PRD §8 entities now present: identity/profile (P0), Session/RecordingConsent (P1), Transcript/Score (P2). Still absent until their phase: Scenario, Showcase, Shortlist, Notification, Report, MatchRequest — add via expand-then-contract migrations.
+- **Phase 2 live round-trip not yet run with real keys** (verified by layer + deterministic calibration). See the Phase 2 status note for the manual check.
+- **Phase 2 deferred TODOs:** `score/created` has no consumer (Resend + in-app notification = Phase 6); scoring runs real-time only (Batch reprocessing/backfill = later cost optimization); rubric calibration is local/manual, not a CI gate yet (PRD §6.4 wants ~30 reps in CI — we have 3); per-scenario weighting is built but unwired (Phase 3); rep view is seller-only (counterpart/recruiter access later); dispute/flag flow (FR-24) = Phase 6; seller-speaker identification is LLM-inferred (per-participant track egress would make it exact — Phase 1 change).
 - **Open schema choices** (owner deferred): `OrgRole` follows the PRD (`recruiter|manager|admin`, no `practitioner`); `User.primaryTrack` is an extra field beyond PRD §8.
 - **`docs/cost-and-pricing.md` is referenced but missing.**
 - **Sidebar nav** shows later-phase items (Roleplays, AI Training, Candidates) as disabled "Soon" — visual only, not wired.
+
+---
+
+## Phase 3 (Matchmaking) — what it needs (do NOT build yet)
+
+- **Scenario library first** (PRD FR-6–FR-8): add the `Scenario` table (`track`, `difficulty`, `title`, `context`, `seller_objective`, `counterpart_persona`, `duration_s`, `rubric_weights_json`, `version`, `active`) + admin CRUD. Then **wire `getScenarioWeights(scenario.track)` / `scenario.rubric_weights_json` into the scoring `aggregate()` call** in `@sr/jobs` (the presets + resolver already exist in `@sr/core`), and pass the scenario brief into `buildScoringPrompt` (the `scenarioBrief` param is already plumbed). Populate `Session.scenarioId/scenarioVersion`.
+- **`MatchRequest` table** (PRD §8) + **Upstash Redis** queue/presence (`UPSTASH_REDIS_REST_URL`/`_TOKEN` — add to `@sr/config` + `.env.example`); pairing logic (complementary roles, similar level, not recently matched); lobby + brief reveal + Ready gating (FR-9–FR-12); no-show handling.
+- Matchmaking creates the `Session` (today the host creates it directly in `roleplay.createSession`); the rest of the call→record→score pipeline is unchanged and already works.

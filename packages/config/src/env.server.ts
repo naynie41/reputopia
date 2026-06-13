@@ -31,6 +31,15 @@ const serverSchema = z.object({
   R2_ACCESS_KEY_ID: z.string().min(1, "R2_ACCESS_KEY_ID is required"),
   R2_SECRET_ACCESS_KEY: z.string().min(1, "R2_SECRET_ACCESS_KEY is required"),
   R2_BUCKET: z.string().min(1, "R2_BUCKET is required"),
+
+  // Phase 2: async scoring pipeline (@sr/jobs).
+  // AssemblyAI batch transcription + Anthropic scoring — required for the pipeline to run.
+  ASSEMBLYAI_API_KEY: z.string().min(1, "ASSEMBLYAI_API_KEY is required"),
+  ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
+  // Inngest cloud keys: OPTIONAL — the local Inngest dev server doesn't use them.
+  // Required only in deployed environments (set in Vercel per the DevOps handover).
+  INNGEST_EVENT_KEY: z.string().optional(),
+  INNGEST_SIGNING_KEY: z.string().optional(),
 });
 
 function loadServerEnv(): z.infer<typeof serverSchema> {

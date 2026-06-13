@@ -195,11 +195,15 @@ function PostCall({ sessionId }: { sessionId: string }) {
         <CardDescription>Nice work — your roleplay is complete.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="rounded-lg border border-dashed p-5 text-center">
+        <div className="rounded-lg border p-5 text-center">
           <div className="text-sm font-medium">AI analysis & scoring</div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Coming soon — transcription and rubric scoring land in Phase 2.
+            We&apos;re transcribing and scoring your call against the rubric. It&apos;s ready in a few
+            minutes.
           </p>
+          <Button asChild className="mt-4 w-full">
+            <Link href={`/reps/${sessionId}`}>View your rep</Link>
+          </Button>
         </div>
 
         {url ? (

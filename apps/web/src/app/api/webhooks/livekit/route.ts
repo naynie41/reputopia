@@ -1,17 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { EgressStatus } from "livekit-server-sdk";
 import { prisma } from "@sr/db";
+import { inngest } from "@sr/jobs";
 import { receiveWebhook } from "@/server/livekit";
 
 /**
  * LiveKit webhook. Per the architecture rules this does MINIMAL work: verify the
- * signature, then persist room/egress state. No transcription/scoring here.
+ * signature, then persist room/egress state and enqueue the async pipeline. No
+ * transcription/scoring runs here (it would time out) — that lives in Inngest.
  *
- * Phase 2 SEAM: on `room_finished` we will additionally emit a `session.ended` event
- * to Inngest to kick off the async transcription/scoring pipeline. Not wired yet.
+ * Phase 2: when egress completes (recording READY in R2) we emit `session/ended` to
+ * Inngest, which runs transcription -> metrics -> scoring -> persist. We trigger on
+ * egress-complete (not room_finished) because scoring needs the finished recording.
  *
- * Idempotent: all writes are conditional `updateMany` by roomId, so redelivered
- * events are safe.
+ * Idempotent: all writes are conditional `updateMany` by roomId, and the emitted event
+ * carries a per-session id so redelivered webhooks don't double-trigger the pipeline.
  */
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
@@ -32,7 +35,6 @@ export async function POST(req: NextRequest) {
           where: { roomId, status: { not: "ENDED" } },
           data: { status: "ENDED", endedAt: new Date() },
         });
-        // Phase 2 SEAM: enqueue Inngest `session.ended` here.
       }
       break;
     }
@@ -66,6 +68,23 @@ export async function POST(req: NextRequest) {
               ...(done && recordingKey ? { recordingKey } : {}),
             },
           });
+
+          // Recording is in R2 — kick off the async scoring pipeline. Look up the
+          // session id (the webhook keys on roomId) and emit once per session; the
+          // event id dedupes redelivered egress webhooks.
+          if (done && recordingKey) {
+            const session = await prisma.session.findUnique({
+              where: { roomId },
+              select: { id: true },
+            });
+            if (session) {
+              await inngest.send({
+                id: `session-ended-${session.id}`,
+                name: "session/ended",
+                data: { sessionId: session.id },
+              });
+            }
+          }
         }
       }
       break;

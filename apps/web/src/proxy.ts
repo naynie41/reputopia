@@ -8,6 +8,9 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/api/health",
   "/api/webhooks(.*)",
+  // Inngest serve endpoint: requests are verified by INNGEST_SIGNING_KEY in the serve
+  // handler, so it must bypass Clerk auth (otherwise the sync handshake/invokes 401).
+  "/api/inngest(.*)",
   // tRPC enforces auth per-procedure; let it through here.
   "/api/trpc(.*)",
 ]);
