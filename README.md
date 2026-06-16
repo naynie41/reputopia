@@ -3,10 +3,10 @@
 Live sales roleplay calls, AI scoring, and a showcase portfolio. See [`docs/PRD.md`](docs/PRD.md),
 [`docs/CLAUDE.md`](docs/CLAUDE.md), and [`docs/devops-handover.md`](docs/devops-handover.md).
 
-**Status: Phase 0 — Foundations.** A user can sign up, pick a role (practitioner or
+**Status: Foundations.** A user can sign up, pick a role (practitioner or
 recruiter/manager), and edit a profile. Nothing beyond that is built yet.
 
-## Stack (Phase 0)
+## Stack 
 
 - **pnpm monorepo** · TypeScript end-to-end
 - **apps/web** — Next.js 16 (App Router, Turbopack) + Tailwind v4 + shadcn-style UI
