@@ -1,85 +1,18 @@
 # Sales Roleplay
 
-> The **"GitHub for sales reps."** Practice live, scenario-based sales roleplay calls with a peer, get **AI analysis and scoring** against a rubric after every call, and build a **verifiable, skill-based portfolio** that recruiters and managers can trust.
+Live sales roleplay calls, AI scoring, and a showcase portfolio. See [`docs/PRD.md`](docs/PRD.md),
+[`docs/CLAUDE.md`](docs/CLAUDE.md), and [`docs/devops-handover.md`](docs/devops-handover.md).
 
-<p>
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-end--to--end-3178c6?logo=typescript&logoColor=white">
-  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?logo=next.js">
-  <img alt="tRPC" src="https://img.shields.io/badge/tRPC-v11-2596be?logo=trpc&logoColor=white">
-  <img alt="Prisma" src="https://img.shields.io/badge/Prisma-7-2d3748?logo=prisma&logoColor=white">
-  <img alt="pnpm" src="https://img.shields.io/badge/pnpm-workspace-f69220?logo=pnpm&logoColor=white">
-  <img alt="license" src="https://img.shields.io/badge/license-private-lightgrey">
-</p>
+**Status: Phase 0 — Foundations.** A user can sign up, pick a role (practitioner or
+recruiter/manager), and edit a profile. Nothing beyond that is built yet.
 
-Sales professionals improve mainly through live reps, but real reps are scarce, high-stakes, and rarely scored objectively — and recruiters have no reliable way to evaluate someone's *actual* selling ability before a hire. Sales Roleplay pairs practitioners for **1:1 video roleplays**, scores the seller with a **mix of deterministic metrics and an LLM judge**, and turns every call into a showcaseable rep.
+## Stack (Phase 0)
 
----
-
-## Table of contents
-
-- [Core loops](#core-loops)
-- [How it works](#how-it-works)
-- [Tech stack](#tech-stack)
-- [Monorepo layout](#monorepo-layout)
-- [Getting started](#getting-started)
-- [Environment variables](#environment-variables)
-- [Running the full pipeline locally](#running-the-full-pipeline-locally)
-- [Scripts](#scripts)
-- [Documentation](#documentation)
-- [Conventions](#conventions)
-- [License](#license)
-
----
-
-## Core loops
-
-- **Practitioner:** match → roleplay → AI score → improve → showcase.
-- **Recruiter / manager:** browse and filter scored candidates → review recorded reps → shortlist → contact.
-
-Scoring covers four skill tracks — **DM / cold setting, objection handling, discovery, and closing** — across eight rubric dimensions (six LLM-judged, two computed).
-
-## How it works
-
-**Live call → recording → scoring** is asynchronous and durable: the request path never blocks on transcription or an LLM.
-
-```mermaid
-flowchart LR
-  subgraph Call
-    L["LiveKit 1:1 call"] -->|Egress| R2[("Cloudflare R2<br/>private recording")]
-    L -->|webhook| EV["session/ended"]
-  end
-  subgraph Pipeline["Inngest pipeline · durable, retried, idempotent"]
-    EV --> T["AssemblyAI<br/>batch + speaker diarization"]
-    T --> M["Deterministic metrics<br/>talk %, filler/min, WPM"]
-    M --> S["Claude Sonnet 4.6<br/>cached rubric · structured output<br/>evidence required"]
-    S --> P["Persist Score<br/>+ roll SkillProfile"]
-    P --> N["score/created → notify"]
-  end
-```
-
-- **Deterministic dimensions** (talk/listen ratio, filler & pace) are pure functions over the diarized transcript — no LLM, cheaper, and harder to game.
-- **LLM-judged dimensions** are scored by Claude against **anchored 0/50/100 rubric descriptions**, and **every dimension must cite transcript turns as evidence** (rejected + auto-corrected otherwise).
-- **Matchmaking** pairs users **atomically on enqueue** via a single Redis Lua script (Upstash) — race-safe, complementary roles, similar level/difficulty, not recently matched — then routes both through a **lobby** (role-scoped briefs, ready-gating) into the call.
-
-The scoring rubric, output contract (zod), deterministic metrics, weighting, and a calibration set all live as **pure, unit-tested code** in [`packages/core`](packages/core).
-
-## Tech stack
-
-| Layer | Choice |
-|---|---|
-| Language | **TypeScript** everywhere (no JS files) |
-| Web / API | **Next.js 16** (App Router, Turbopack) · **tRPC v11** · TanStack Query |
-| UI | **Tailwind v4** + shadcn-style primitives |
-| Auth | **Clerk v7** (organizations + roles) |
-| Database | **PostgreSQL on Neon** + **Prisma 7** (Neon driver adapter; pooled at runtime, direct for migrations) |
-| Real-time calls | **LiveKit Cloud** (WebRTC + Egress recording) |
-| Matchmaking queue | **Upstash Redis** (REST; atomic Lua pairing) |
-| Background jobs | **Inngest** (durable, retried, idempotent) |
-| Transcription | **AssemblyAI** (batch + speaker diarization) |
-| AI scoring | **Anthropic Claude** (Sonnet 4.6 default; prompt caching + structured output) |
-| Object storage | **Cloudflare R2** (private bucket; short-lived signed URLs) |
-
-Fully managed / serverless — **no Docker in production**.
+- **pnpm monorepo** · TypeScript end-to-end
+- **apps/web** — Next.js 16 (App Router, Turbopack) + Tailwind v4 + shadcn-style UI
+- **tRPC v11** (`@trpc/tanstack-react-query`) + TanStack Query
+- **Clerk v7** auth (organizations + roles)
+- **Prisma 7** + **Neon** Postgres (pooled runtime, direct migrations, Neon driver adapter)
 
 ## Monorepo layout
 
