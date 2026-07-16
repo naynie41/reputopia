@@ -40,6 +40,10 @@ const serverSchema = z.object({
   // Required only in deployed environments (set in Vercel per the DevOps handover).
   INNGEST_EVENT_KEY: z.string().optional(),
   INNGEST_SIGNING_KEY: z.string().optional(),
+
+  // Phase 3: Upstash Redis (matchmaking queue). REST-based; required to run the queue.
+  UPSTASH_REDIS_REST_URL: z.string().url("UPSTASH_REDIS_REST_URL must be a valid URL"),
+  UPSTASH_REDIS_REST_TOKEN: z.string().min(1, "UPSTASH_REDIS_REST_TOKEN is required"),
 });
 
 function loadServerEnv(): z.infer<typeof serverSchema> {

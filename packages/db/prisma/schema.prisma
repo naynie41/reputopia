@@ -5,9 +5,10 @@
 // PHASE 2: async scoring — Transcript, Score (+ TranscriptStatus/ScoreStatus). The
 // pipeline runs in @sr/jobs (Inngest): transcribe (AssemblyAI) -> deterministic
 // metrics -> Claude scoring -> persist Score + update SkillProfile.
-// Later PRD §8 entities (Scenario, Showcase, Shortlist, Notification, Report,
-// MatchRequest) arrive in their phases via backward-compatible
-// (expand-then-contract) migrations — do NOT add them ahead of their phase.
+// PHASE 3 (in progress): matchmaking — Scenario library + MatchRequest queue. Session
+// lobby fields land with the pairing/lobby work.
+// Later PRD §8 entities (Showcase, Shortlist, Notification, Report) arrive in their phases
+// via backward-compatible (expand-then-contract) migrations — do NOT add ahead of phase.
 //
 // Enums mirror packages/core/src/enums.ts — keep member names in sync.
 
@@ -49,6 +50,24 @@ enum ExperienceLevel {
   MID
   SENIOR
   LEAD
+}
+
+// Which side a user wants to play in matchmaking (PRD FR-9). EITHER fills whichever
+// seat the pairing needs.
+enum PreferredRole {
+  SELLER
+  COUNTERPART
+  EITHER
+}
+
+// Lifecycle of a matchmaking queue request (PRD §8 MatchRequest). Redis holds the live
+// queue; this row is the durable record. WAITING while queued; MATCHED when paired;
+// CANCELED on leave; EXPIRED if it goes stale without matching.
+enum MatchStatus {
+  WAITING
+  MATCHED
+  CANCELED
+  EXPIRED
 }
 
 enum SessionStatus {
@@ -109,6 +128,9 @@ model User {
 
   // Phase 2: AI scores where this user is the scored subject (v1 = seller only).
   scores Score[] @relation("ScoreSubject")
+
+  // Phase 3: matchmaking queue requests.
+  matchRequests MatchRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -273,5 +295,57 @@ model Score {
 
   @@unique([sessionId, subjectUserId])
   @@index([subjectUserId])
+  @@index([status])
+}
+
+// Roleplay scenario the library offers and matchmaking assigns from (PRD §5.2 / §8
+// Scenario). `rubricWeights` is the per-scenario weighting applied at scoring time (the
+// @sr/core rubric weights, summing to 1) — Phase 3 wires it into aggregate(). Scenarios
+// are versioned (FR-7): a completed call records the version used (Session.scenarioVersion);
+// deactivating sets `active = false` (soft delete) so historical sessions keep resolving.
+// `slug` is a stable human-readable key used for idempotent seeding + admin reference.
+model Scenario {
+  id   String @id @default(cuid())
+  slug String @unique
+
+  track      Track
+  difficulty Int // 1 (easy) – 3 (hard)
+
+  title              String
+  context            String // shared setup both participants see
+  sellerObjective    String // shown to the seller only (FR-6)
+  counterpartPersona String // shown to the counterpart only (FR-6)
+
+  durationS     Int // recommended call length; drives the in-call timer (FR-15)
+  rubricWeights Json // Record<dimensionKey, number> summing to 1 (@sr/core rubricWeightsSchema)
+
+  version Int     @default(1)
+  active  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([track, difficulty])
+  @@index([active])
+}
+
+// A matchmaking queue request (PRD §5.3 / §8 MatchRequest). The live queue lives in
+// Upstash Redis (fast, atomic pairing); this row is the durable audit + the source of
+// truth for "which queue is this user in" when a Redis entry has expired. scenarioId is
+// null for "any in this track" (FR-9). A user has at most one WAITING request at a time.
+model MatchRequest {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  track         Track
+  scenarioId    String? // null = "any in this track"
+  preferredRole PreferredRole @default(EITHER)
+  status        MatchStatus   @default(WAITING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
   @@index([status])
 }

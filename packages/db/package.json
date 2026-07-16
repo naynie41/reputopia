@@ -18,7 +18,8 @@
   "dependencies": {
     "@prisma/adapter-neon": "^7.8.0",
     "@prisma/client": "^7.8.0",
-    "@sr/config": "workspace:*"
+    "@sr/config": "workspace:*",
+    "@sr/core": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

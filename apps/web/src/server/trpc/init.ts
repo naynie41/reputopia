@@ -2,6 +2,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@sr/db";
+import { ensureDbUser } from "../users";
 
 /**
  * tRPC context — built per request. Carries the Prisma client and the Clerk auth
@@ -35,4 +36,16 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
       clerkAuth: { ...ctx.clerkAuth, userId: ctx.clerkAuth.userId },
     },
   });
+});
+
+/**
+ * Requires the caller to be an ADMIN (DB role is the source of truth). Adds the resolved
+ * DB user to context as `dbUser`. Used for scenario CRUD (FR-7) and other admin ops.
+ */
+export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  const dbUser = await ensureDbUser(ctx.clerkAuth.userId);
+  if (dbUser.role !== "ADMIN") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required." });
+  }
+  return next({ ctx: { ...ctx, dbUser } });
 });
