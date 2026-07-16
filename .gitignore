@@ -27,3 +27,5 @@ coverage/
 .vercel/
 .turbo/
 docs/
+.agents/
+.claude/
