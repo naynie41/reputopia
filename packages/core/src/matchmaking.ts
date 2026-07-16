@@ -24,3 +24,25 @@ export type JoinQueueInput = z.infer<typeof joinQueueInputSchema>;
  */
 export const QUEUE_ENTRY_TTL_SECONDS = 30;
 export const QUEUE_HEARTBEAT_INTERVAL_SECONDS = 10;
+
+/** Compatibility tolerances for pairing (PRD FR-10 "similar difficulty/level"). */
+export const LEVEL_BAND = 2; // max experience-rank gap between paired users
+export const DIFFICULTY_BAND = 1; // max scenario-difficulty gap
+/** Don't re-pair the same two users within this window (FR-10 "not recently matched"). */
+export const RECENT_MATCH_TTL_SECONDS = 60 * 60;
+
+/** Lobby "get ready" countdown before a match is expected to start (FR-11). */
+export const LOBBY_COUNTDOWN_SECONDS = 60;
+
+/** Experience level → numeric rank for proximity checks. -1 = unknown (don't filter). */
+export const EXPERIENCE_LEVEL_RANK: Readonly<Record<string, number>> = {
+  STUDENT: 0,
+  JUNIOR: 1,
+  MID: 2,
+  SENIOR: 3,
+  LEAD: 4,
+};
+
+export function experienceLevelToRank(level: string | null | undefined): number {
+  return level && level in EXPERIENCE_LEVEL_RANK ? EXPERIENCE_LEVEL_RANK[level]! : -1;
+}

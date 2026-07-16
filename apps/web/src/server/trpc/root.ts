@@ -5,6 +5,7 @@ import { consentRouter } from "./routers/consent";
 import { scoreRouter } from "./routers/score";
 import { scenarioRouter } from "./routers/scenario";
 import { matchmakingRouter } from "./routers/matchmaking";
+import { lobbyRouter } from "./routers/lobby";
 
 export const appRouter = createTRPCRouter({
   profile: profileRouter,
@@ -13,6 +14,7 @@ export const appRouter = createTRPCRouter({
   score: scoreRouter,
   scenario: scenarioRouter,
   matchmaking: matchmakingRouter,
+  lobby: lobbyRouter,
 });
 
 export type AppRouter = typeof appRouter;

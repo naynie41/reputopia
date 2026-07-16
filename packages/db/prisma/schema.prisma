@@ -202,6 +202,10 @@ model Session {
   startedAt       DateTime?
   endedAt         DateTime?
 
+  // Phase 3 lobby (FR-11): both participants "Ready" before entering the call.
+  sellerReady      Boolean @default(false)
+  counterpartReady Boolean @default(false)
+
   // Recording (LiveKit Egress -> R2). recordingKey is the private R2 object key;
   // it is NEVER served directly — only via short-lived signed URLs.
   recordingStatus RecordingStatus @default(NONE)

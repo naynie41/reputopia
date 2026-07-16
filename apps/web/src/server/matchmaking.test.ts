@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import type { Redis } from "@upstash/redis";
-import { dequeue, enqueue, evictStale, heartbeat, queueSize } from "./matchmaking";
+import { assignRoles, dequeue, enqueue, evictStale, heartbeat, queueSize } from "./matchmaking";
 
 /**
  * In-memory fake of the handful of Upstash Redis commands the queue uses, so the
@@ -137,5 +137,22 @@ describe("matchmaking queue", () => {
     raw.hashes.delete("mm:req:u1");
     await evictStale(redis, "DISCOVERY");
     expect(await queueSize(redis, "DISCOVERY")).toBe(0);
+  });
+});
+
+describe("assignRoles (complementary role resolution)", () => {
+  it("honors an explicit seller/counterpart preference", () => {
+    expect(assignRoles("j", "SELLER", "c", "COUNTERPART")).toEqual({ sellerId: "j", counterpartId: "c" });
+    expect(assignRoles("j", "COUNTERPART", "c", "SELLER")).toEqual({ sellerId: "c", counterpartId: "j" });
+  });
+
+  it("lets an EITHER joiner take the seat the candidate doesn't want", () => {
+    expect(assignRoles("j", "EITHER", "c", "SELLER")).toEqual({ sellerId: "c", counterpartId: "j" });
+    expect(assignRoles("j", "EITHER", "c", "COUNTERPART")).toEqual({ sellerId: "j", counterpartId: "c" });
+  });
+
+  it("assigns arbitrarily but validly when both are EITHER", () => {
+    const roles = assignRoles("j", "EITHER", "c", "EITHER");
+    expect(new Set([roles.sellerId, roles.counterpartId])).toEqual(new Set(["j", "c"]));
   });
 });
