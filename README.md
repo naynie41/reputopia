@@ -118,7 +118,6 @@ Run `pnpm lint` and `pnpm typecheck` before considering work done.
 
 - [`docs/PRD.md`](docs/PRD.md) — product spec, user roles, the AI scoring system, and data model.
 - [`docs/devops-handover.md`](docs/devops-handover.md) — environments, CI/CD, secrets, webhooks, observability, runbooks.
-- [`docs/CLAUDE.md`](docs/CLAUDE.md) — engineering guide: architecture rules and conventions.
 
 ## License
 
