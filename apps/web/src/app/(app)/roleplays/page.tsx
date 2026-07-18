@@ -1,16 +1,7 @@
-import { RoleplayStart } from "@/components/call/roleplay-start";
+import { FindMatch } from "@/components/matchmaking/find-match";
 
 export default function RoleplaysPage() {
-  // Auth + onboarding gating handled by the (app) layout.
-  return (
-    <div className="mx-auto max-w-3xl px-8 py-10">
-      <h1 className="text-2xl font-bold tracking-tight">Roleplays</h1>
-      <p className="mt-2 text-muted-foreground">
-        Start a live 1:1 practice call. Matchmaking comes later — for now, share the invite link.
-      </p>
-      <div className="mt-8">
-        <RoleplayStart />
-      </div>
-    </div>
-  );
+  // Auth + onboarding gating handled by the (app) layout. Matchmaking is the primary
+  // entry point: pick a track/scenario/role, join the queue, and get paired into a call.
+  return <FindMatch />;
 }

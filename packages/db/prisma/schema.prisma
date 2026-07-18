@@ -118,6 +118,9 @@ model User {
   // True once the user has completed first-login role selection (FR-2).
   onboardedAt DateTime?
 
+  // Phase 3 reputation: incremented when the user no-shows / abandons a match (FR-12).
+  noShowCount Int @default(0)
+
   memberships  OrgMembership[]
   skillProfile SkillProfile?
 

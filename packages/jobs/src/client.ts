@@ -18,4 +18,9 @@ export const scoreCreatedEvent = eventType("score/created", {
   schema: staticSchema<{ sessionId: string; subjectUserId: string; scoreId: string }>(),
 });
 
+/** Emitted when a match is created; arms the durable no-show timer (FR-12). */
+export const matchCreatedEvent = eventType("match/created", {
+  schema: staticSchema<{ sessionId: string }>(),
+});
+
 export const inngest = new Inngest({ id: "sales-roleplay" });

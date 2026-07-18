@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type { PrismaClient } from "@sr/db";
+import { leaveMatch, redis } from "@sr/jobs";
 
 /**
  * Match lobby (PRD FR-11): between pairing and the call. Each participant sees their own
@@ -89,4 +90,23 @@ export async function setReady(
     select: { sellerReady: true, counterpartReady: true },
   });
   return { bothReady: updated.sellerReady && updated.counterpartReady };
+}
+
+/**
+ * Explicit leave before the call starts (FR-12): treated as a no-show for the leaver, and
+ * the other participant is re-queued so they don't lose their place. Participants only.
+ */
+export async function leaveLobby(
+  prisma: PrismaClient,
+  sessionId: string,
+  userId: string,
+): Promise<{ left: boolean }> {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: { sellerId: true, counterpartId: true },
+  });
+  if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Match not found." });
+  participantRole(session, userId); // authorize (throws if not a participant)
+  const left = await leaveMatch(redis, prisma, sessionId, userId);
+  return { left };
 }

@@ -39,6 +39,9 @@ export function Lobby({ sessionId }: { sessionId: string }) {
   const ready = useMutation(
     trpc.lobby.ready.mutationOptions({ onSuccess: () => lobbyQuery.refetch() }),
   );
+  const leave = useMutation(
+    trpc.lobby.leave.mutationOptions({ onSuccess: () => router.push("/roleplays") }),
+  );
 
   const data = lobbyQuery.data;
 
@@ -134,13 +137,22 @@ export function Lobby({ sessionId }: { sessionId: string }) {
           </div>
         </div>
 
-        <Button
-          size="lg"
-          disabled={data.you.ready || ready.isPending}
-          onClick={() => ready.mutate({ sessionId })}
-        >
-          {data.you.ready ? "You're ready ✓" : ready.isPending ? "…" : "I'm ready"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            disabled={leave.isPending}
+            onClick={() => leave.mutate({ sessionId })}
+          >
+            Leave
+          </Button>
+          <Button
+            size="lg"
+            disabled={data.you.ready || ready.isPending}
+            onClick={() => ready.mutate({ sessionId })}
+          >
+            {data.you.ready ? "You're ready ✓" : ready.isPending ? "…" : "I'm ready"}
+          </Button>
+        </div>
       </div>
 
       {data.you.ready && !data.partner.ready && (

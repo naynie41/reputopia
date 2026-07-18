@@ -9,7 +9,7 @@ loadEnv({ path: path.resolve(process.cwd(), "../../.env") });
 
 const nextConfig: NextConfig = {
   // Workspace packages ship as TypeScript source; let Next transpile them.
-  transpilePackages: ["@sr/config", "@sr/core", "@sr/db"],
+  transpilePackages: ["@sr/config", "@sr/core", "@sr/db", "@sr/jobs"],
   // Keep Prisma + its driver adapter and the heavy server SDKs out of the bundle.
   serverExternalPackages: [
     "@prisma/client",

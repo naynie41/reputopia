@@ -34,6 +34,12 @@ export const RECENT_MATCH_TTL_SECONDS = 60 * 60;
 /** Lobby "get ready" countdown before a match is expected to start (FR-11). */
 export const LOBBY_COUNTDOWN_SECONDS = 60;
 
+/**
+ * How long the durable no-show timer waits after a match is created before cancelling it
+ * if both participants haven't readied (FR-12). Slightly longer than the lobby countdown.
+ */
+export const NO_SHOW_TIMEOUT_SECONDS = 75;
+
 /** Experience level → numeric rank for proximity checks. -1 = unknown (don't filter). */
 export const EXPERIENCE_LEVEL_RANK: Readonly<Record<string, number>> = {
   STUDENT: 0,

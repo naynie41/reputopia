@@ -2,8 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { joinQueueInputSchema } from "@sr/core";
 import { createTRPCRouter, protectedProcedure } from "../init";
 import { ensureDbUser } from "../../users";
-import { dequeue, heartbeat, joinAndPair, readQueueState } from "../../matchmaking";
-import { redis } from "../../redis";
+import { dequeue, heartbeat, joinAndPair, readQueueState, redis } from "@sr/jobs";
 
 /**
  * Matchmaking (PRD §5.3). Joining pairs atomically on enqueue (see @/server/matchmaking);

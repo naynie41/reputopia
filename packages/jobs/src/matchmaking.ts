@@ -10,6 +10,7 @@ import {
   type PreferredRole,
   type Track,
 } from "@sr/core";
+import { inngest } from "./client";
 
 /**
  * Matchmaking queue + atomic pairing (PRD §5.3). Pairing happens ON ENQUEUE: a single
@@ -17,6 +18,9 @@ import {
  * removes them, or enqueues the joiner — atomically, because Redis runs the whole script
  * without interleaving. That is what makes two simultaneous joins race-safe: they're
  * serialized, so the same waiting user can never be handed to two joiners.
+ *
+ * Lives in @sr/jobs because both the tRPC layer (join/leave/status) and the durable
+ * no-show job need it. The Redis client is passed in so the logic is unit-testable.
  *
  * Structures:
  *   mm:q:{track}          ZSET  member=userId, score=enqueuedAtMs (FIFO scan pool)
@@ -184,8 +188,8 @@ export type JoinResult =
 
 /**
  * Join the queue and pair atomically. On a match, creates the Session (reusing the Phase 1
- * model), flips both MatchRequests to MATCHED, and points the waiting user at the session
- * so their poll discovers it. On no match, records a WAITING request.
+ * model), flips both MatchRequests to MATCHED, points the waiting user at the session, and
+ * emits `match/created` to arm the durable no-show timer. On no match, records WAITING.
  */
 export async function joinAndPair(
   redis: Redis,
@@ -287,7 +291,122 @@ export async function joinAndPair(
     data: { status: "MATCHED" },
   });
 
+  // Arm the durable no-show timer. Best-effort: a failed emit (e.g. no local Inngest dev
+  // server) must not fail the match itself. Event id dedupes redelivery.
+  try {
+    await inngest.send({ id: `match-created-${sessionId}`, name: "match/created", data: { sessionId } });
+  } catch {
+    // no-op — the no-show safety net is unavailable, but the match is valid.
+  }
+
   return { status: "MATCHED", sessionId, role: sellerId === input.userId ? "seller" : "counterpart" };
+}
+
+// ---------------------------------------------------------------------------
+// Abandon / no-show resolution (FR-12)
+// ---------------------------------------------------------------------------
+
+/** Re-queue a user with their most recent preferences (used by no-show / leave). */
+async function requeueUser(redis: Redis, prisma: PrismaClient, userId: string): Promise<void> {
+  const req = await prisma.matchRequest.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    select: { track: true, scenarioId: true, preferredRole: true },
+  });
+  if (!req) return;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { experienceLevel: true },
+  });
+  await joinAndPair(redis, prisma, {
+    userId,
+    experienceLevel: user?.experienceLevel ?? null,
+    track: req.track,
+    scenarioId: req.scenarioId ?? undefined,
+    preferredRole: req.preferredRole,
+  });
+}
+
+/**
+ * Atomically cancel a still-PENDING match, then no-show + re-queue. The updateMany guard
+ * makes it idempotent: only the first caller that flips PENDING→CANCELED proceeds, so a
+ * racing timeout + explicit-leave — or a call that already started (status LIVE) — is a
+ * safe no-op.
+ */
+async function cancelAndResolve(
+  redis: Redis,
+  prisma: PrismaClient,
+  sessionId: string,
+  requeueIds: string[],
+  noShowIds: string[],
+): Promise<boolean> {
+  const cancel = await prisma.session.updateMany({
+    where: { id: sessionId, status: "PENDING" },
+    data: { status: "CANCELED" },
+  });
+  if (cancel.count === 0) return false; // already started / resolved
+
+  // Clear stale match pointers so no one is routed back to the canceled session.
+  for (const id of [...requeueIds, ...noShowIds]) await redis.del(matchKey(id));
+  for (const id of noShowIds) {
+    await prisma.user.update({ where: { id }, data: { noShowCount: { increment: 1 } } });
+  }
+  for (const id of requeueIds) await requeueUser(redis, prisma, id);
+  return true;
+}
+
+/**
+ * No-show timeout resolution (FR-12), called after the durable delay. No-op if the call
+ * already started or both readied; otherwise cancels the match, re-queues whoever readied,
+ * and records a no-show for whoever didn't.
+ */
+export async function resolveNoShow(
+  redis: Redis,
+  prisma: PrismaClient,
+  sessionId: string,
+): Promise<{ canceled: boolean; requeued: string[]; noShow: string[] }> {
+  const none = { canceled: false, requeued: [] as string[], noShow: [] as string[] };
+  const s = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: {
+      status: true,
+      sellerId: true,
+      counterpartId: true,
+      sellerReady: true,
+      counterpartReady: true,
+    },
+  });
+  if (!s || s.status !== "PENDING") return none; // started / ended / already canceled
+  if (s.sellerReady && s.counterpartReady) return none; // both showed
+
+  const requeue: string[] = [];
+  const noShow: string[] = [];
+  (s.sellerReady ? requeue : noShow).push(s.sellerId);
+  if (s.counterpartId) (s.counterpartReady ? requeue : noShow).push(s.counterpartId);
+
+  const did = await cancelAndResolve(redis, prisma, sessionId, requeue, noShow);
+  return did ? { canceled: true, requeued: requeue, noShow } : none;
+}
+
+/**
+ * Explicit lobby leave (FR-12): the leaver is treated as a no-show; the other participant
+ * is re-queued so they don't lose their place. The caller must have authorized `leaverId`
+ * as a participant. Idempotent + a no-op once the call has started.
+ */
+export async function leaveMatch(
+  redis: Redis,
+  prisma: PrismaClient,
+  sessionId: string,
+  leaverId: string,
+): Promise<boolean> {
+  const s = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: { status: true, sellerId: true, counterpartId: true },
+  });
+  if (!s || s.status !== "PENDING") return false;
+  if (s.sellerId !== leaverId && s.counterpartId !== leaverId) return false;
+  const other = s.sellerId === leaverId ? s.counterpartId : s.sellerId;
+  return cancelAndResolve(redis, prisma, sessionId, other ? [other] : [], [leaverId]);
 }
 
 /**

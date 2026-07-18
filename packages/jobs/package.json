@@ -16,6 +16,7 @@
     "@aws-sdk/client-s3": "^3.1063.0",
     "@aws-sdk/s3-request-presigner": "^3.1063.0",
     "@sr/config": "workspace:*",
+    "@upstash/redis": "^1.38.0",
     "@sr/core": "workspace:*",
     "@sr/db": "workspace:*",
     "assemblyai": "^4.34.5",
